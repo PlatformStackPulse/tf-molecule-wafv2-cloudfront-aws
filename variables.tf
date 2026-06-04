@@ -1,7 +1,3 @@
-variable "name" {
-  description = "Name of the WAFv2 Web ACL"
-  type        = string
-}
 
 variable "managed_rules" {
   description = "List of AWS managed rule groups to attach"
