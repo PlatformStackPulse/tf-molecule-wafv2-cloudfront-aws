@@ -1,6 +1,44 @@
 # tf-molecule-wafv2-cloudfront-aws
 
-Terraform molecule (PlatformStackPulse). See the module documentation below.
+Terraform molecule (PlatformStackPulse) that provisions an **AWS WAFv2 Web ACL** scoped to `CLOUDFRONT`, ready to attach to a CloudFront distribution for edge-layer protection.
+
+## Features
+
+- **CloudFront-scoped WAFv2 Web ACL** — created in `us-east-1` scope (`CLOUDFRONT`) so it can be associated with a CloudFront distribution's `web_acl_id`.
+- **AWS Managed Rule Groups** — attaches a configurable list of managed rule groups (defaults: Common Rule Set, Known Bad Inputs, SQLi) via the `managed_rules` input.
+- **Rate-based protection** — a built-in `RateLimitRule` blocks IPs exceeding a configurable per-5-minute request `rate_limit` (default `2000`).
+- **CloudWatch visibility** — metrics and sampled requests are enabled on the Web ACL and every rule.
+- **tf-label naming & tagging** — consistent `namespace-environment-stage-name` IDs and tags via the embedded `tf-label` context module, with a global `enabled` toggle.
+
+## Usage
+
+```hcl
+module "cloudfront_waf" {
+  source = "git::https://github.com/PlatformStackPulse/tf-molecule-wafv2-cloudfront-aws.git?ref=v1.0.0"
+
+  namespace   = "eg"
+  environment = "use1"
+  stage       = "prod"
+  name        = "cdn"
+
+  # Optional — override the default managed rule groups
+  managed_rules = [
+    { name = "AWSManagedRulesCommonRuleSet", vendor = "AWS", priority = 10 },
+    { name = "AWSManagedRulesKnownBadInputsRuleSet", vendor = "AWS", priority = 20 },
+  ]
+
+  # Optional — requests per 5-minute period before an IP is rate-limited
+  rate_limit = 2000
+}
+
+# Attach to a CloudFront distribution
+resource "aws_cloudfront_distribution" "this" {
+  # ...
+  web_acl_id = module.cloudfront_waf.web_acl_arn
+}
+```
+
+> **Note:** WAFv2 Web ACLs with `CLOUDFRONT` scope must be created in the `us-east-1` region. Configure your `aws` provider accordingly.
 
 <!-- BEGIN_TF_DOCS -->
 ### Requirements
@@ -59,3 +97,18 @@ Terraform molecule (PlatformStackPulse). See the module documentation below.
 | <a name="output_web_acl_arn"></a> [web\_acl\_arn](#output\_web\_acl\_arn) | ARN of the WAFv2 Web ACL (use in CloudFront distribution web\_acl\_id) |
 | <a name="output_web_acl_id"></a> [web\_acl\_id](#output\_web\_acl\_id) | ID of the WAFv2 Web ACL |
 <!-- END_TF_DOCS -->
+
+## Tests
+
+Unit tests use the Terraform native test framework with a mocked AWS provider (no real AWS calls, no credentials required). They assert on plan-known values only — the tf-label `id`, resource `name`/`scope` pass-throughs, resource counts, and the `enabled = false` no-op path.
+
+```bash
+# Unit tests (mock provider — fast, no AWS)
+terraform init -backend=false
+terraform test -test-directory=tests/unit
+
+# Or via the Makefile
+make test-unit
+```
+
+Integration tests (if present under `tests/integration/`) require real AWS credentials and run with `make test-integration`.
